@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>かんたん写真文字入れ</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --text-muted: #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Meiryo", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      max-width: 640px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* チャット履歴エリア */
+    #chat-box {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .msg {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .msg-bot {
+      background: var(--card);
+      border: 1px solid var(--border);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .msg-user {
+      background: var(--primary);
+      color: #fff;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    /* アクション・選択ボタンエリア */
+    .options-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn-opt {
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .btn-opt:active { background: #e2e8f0; }
+
+    /* 下部コントロールバー */
+    #bottom-bar {
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--primary);
+    }
+
+    .btn-send {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    .btn-send:disabled {
+      background: #cbd5e1;
+      cursor: not-allowed;
+    }
+
+    /* プレビュー・保存モーダル */
+    #preview-area {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px;
+      background: #000;
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+
+    #preview-canvas {
+      width: 100%;
+      max-height: 40vh;
+      object-fit: contain;
+      border-radius: 4px;
+    }
+
+    .preview-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-action {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 1rem;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .btn-save { background: #16a34a; color: white; }
+    .btn-reset { background: #475569; color: white; }
+  </style>
+</head>
+<body>
+
+  <header>写真文字入れアシスタント</header>
+
+  <main>
+    <div id="chat-box">
+      <!-- メッセージが動的に追加されます -->
+    </div>
+
+    <div id="bottom-bar">
+      <div class="input-row" id="text-input-container" style="display: none;">
+        <input type="text" id="user-input" placeholder="入れたい文字を入力...">
+        <button class="btn-send" id="btn-submit-text">決定</button>
+      </div>
+      <input type="file" id="file-input" accept="image/*" style="display: none;">
+    </div>
+  </main>
+
+  <script>
+    // 状態管理
+    const state = {
+      step: 0,
+      image: null,
+      text: '',
+      style: { fill: '#ffffff', stroke: '#000000' },
+      position: 'bottom'
+    };
+
+    const chatBox = document.getElementById('chat-box');
+    const bottomBar = document.getElementById('bottom-bar');
+    const textInputContainer = document.getElementById('text-input-container');
+    const userInput = document.getElementById('user-input');
+    const btnSubmitText = document.getElementById('btn-submit-text');
+    const fileInput = document.getElementById('file-input');
+
+    // チャットメッセージ追加
+    function addMessage(sender, htmlContent) {
+      const msg = document.createElement('div');
+      msg.className = `msg msg-${sender}`;
+      msg.innerHTML = htmlContent;
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      return msg;
+    }
+
+    // 初期化
+    function init() {
+      addMessage('bot', 'こんにちは！写真に文字を入れるお手伝いをします。<br>まずは文字を入れたい写真を選びましょう。');
+      
+      const optContainer = document.createElement('div');
+      optContainer.className = 'options-grid';
+      optContainer.style.gridTemplateColumns = '1fr';
+      
+      const btnPick = document.createElement('button');
+      btnPick.className = 'btn-opt';
+      btnPick.style.background = 'var(--primary)';
+      btnPick.style.color = '#fff';
+      btnPick.style.fontWeight = 'bold';
+      btnPick.textContent = '📸 写真アルバムから選ぶ';
+      btnPick.onclick = () => fileInput.click();
+      
+      optContainer.appendChild(btnPick);
+      chatBox.appendChild(optContainer);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // ファイル選択検知
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          state.image = img;
+          addMessage('user', '写真を選びました');
+          askForText();
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // 1. 文字入力の要求
+    function askForText() {
+      state.step = 1;
+      addMessage('bot', '写真にどのような文字を入れたいですか？<br>下の入力欄に文字を入力して「決定」を押してください。');
+      textInputContainer.style.display = 'flex';
+      userInput.value = '';
+      userInput.focus();
+    }
+
+    // 文字決定ボタン
+    btnSubmitText.addEventListener('click', () => {
+      const val = userInput.value.trim();
+      if (!val) return;
+      state.text = val;
+      textInputContainer.style.display = 'none';
+      addMessage('user', val);
+      askForStyle();
+    });
+
+    // 2. 文字スタイルの選択
+    function askForStyle() {
+      state.step = 2;
+      addMessage('bot', '文字の色・スタイルを選んでください。');
+
+      const styles = [
+        { label: '白文字（黒フチ）', fill: '#ffffff', stroke: '#000000' },
+        { label: '黒文字（白フチ）', fill: '#000000', stroke: '#ffffff' },
+        { label: '黄色（黒フチ）', fill: '#facc15', stroke: '#000000' },
+        { label: '赤文字（白フチ）', fill: '#ef4444', stroke: '#ffffff' }
+      ];
+
+      const optContainer = document.createElement('div');
+      optContainer.className = 'options-grid';
+
+      styles.forEach(s => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-opt';
+        btn.textContent = s.label;
+        btn.onclick = () => {
+          state.style = s;
+          optContainer.remove();
+          addMessage('user', s.label);
+          askForPosition();
+        };
+        optContainer.appendChild(btn);
+      });
+
+      chatBox.appendChild(optContainer);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // 3. 配置場所の選択
+    function askForPosition() {
+      state.step = 3;
+      addMessage('bot', '文字を配置する場所を選んでください。');
+
+      const positions = [
+        { label: '上部中央', value: 'top' },
+        { label: '中央', value: 'center' },
+        { label: '下部中央（標準）', value: 'bottom' }
+      ];
+
+      const optContainer = document.createElement('div');
+      optContainer.className = 'options-grid';
+
+      positions.forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-opt';
+        btn.textContent = p.label;
+        btn.onclick = () => {
+          state.position = p.value;
+          optContainer.remove();
+          addMessage('user', p.label);
+          generateResult();
+        };
+        optContainer.appendChild(btn);
+      });
+
+      chatBox.appendChild(optContainer);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // 4. 合成とプレビュー表示
+    function generateResult() {
+      addMessage('bot', '文字を合成しました！出来上がりを確認して「保存する」を押してください。');
+
+      const container = document.createElement('div');
+      container.style.marginTop = '8px';
+
+      const canvas = document.createElement('canvas');
+      canvas.id = 'preview-canvas';
+      const ctx = canvas.getContext('2d');
+
+      // 解像度維持
+      canvas.width = state.image.width;
+      canvas.height = state.image.height;
+      ctx.drawImage(state.image, 0, 0);
+
+      // 文字描画設定
+      const fontSize = Math.max(36, Math.floor(canvas.width / 15));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = state.style.fill;
+      ctx.strokeStyle = state.style.stroke;
+      ctx.lineWidth = Math.max(4, Math.floor(fontSize / 8));
+
+      let x = canvas.width / 2;
+      let y = canvas.height - (fontSize * 1.2);
+
+      if (state.position === 'top') {
+        y = fontSize * 1.5;
+      } else if (state.position === 'center') {
+        y = canvas.height / 2;
+      }
+
+      ctx.strokeText(state.text, x, y);
+      ctx.fillText(state.text, x, y);
+
+      container.appendChild(canvas);
+
+      // 操作ボタン
+      const actionRow = document.createElement('div');
+      actionRow.className = 'preview-actions';
+      actionRow.style.marginTop = '10px';
+
+      const btnSave = document.createElement('button');
+      btnSave.className = 'btn-action btn-save';
+      btnSave.textContent = '💾 画像を保存する';
+      btnSave.onclick = () => {
+        const link = document.createElement('a');
+        link.download = 'photo-with-text.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      };
+
+      const btnReset = document.createElement('button');
+      btnReset.className = 'btn-action btn-reset';
+      btnReset.textContent = '🔄 もう一度作る';
+      btnReset.onclick = () => {
+        chatBox.innerHTML = '';
+        state.image = null;
+        state.text = '';
+        init();
+      };
+
+      actionRow.appendChild(btnSave);
+      actionRow.appendChild(btnReset);
+      container.appendChild(actionRow);
+
+      chatBox.appendChild(container);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // 起動
+    init();
+  </script>
+</body>
+</html>
